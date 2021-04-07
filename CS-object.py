@@ -8,9 +8,9 @@
 #       format_version: '1.5'
 #       jupytext_version: 1.9.1
 #   kernelspec:
-#     display_name: Python-3.8
-#     language: python
-#     name: python3
+#     display_name: R 4.0.3
+#     language: R
+#     name: ir403
 # ---
 
 # # Init
@@ -35,33 +35,15 @@ WORK_DIR = '/home/yu/OneDrive/Construal'
 MODEL_DIR = f'{WORK_DIR}/models/mmdetection'
 DATA_DIR = f'{WORK_DIR}/data'
 
-os.chdir(MODEL_DIR)
-from mmdet.apis import init_detector, inference_detector, show_result_pyplot
 os.chdir(WORK_DIR)
-# -
-
-# # Label distribution
-
-# +
-LVIS_DATA_DIR = '/home/yu/Data/LVIS'
-
-import json
-
-with open(f'{LVIS_DATA_DIR}/lvis_v1_train.json') as ff:
-    label_dist = dt.Frame(json.load(ff)['categories'])
-
-label_dist.names = {'def': 'definition'}
-label_dist = label_dist[:, 
-      [f.id, f.name, f.definition, f.instance_count, f.image_count, f.frequency]]
-
-sv('label_dist')
-# -
-
-labels
 
 # + [markdown] toc-hr-collapsed=true
 # # Obj Detect
 # -
+
+os.chdir(MODEL_DIR)
+from mmdet.apis import init_detector, inference_detector, show_result_pyplot
+os.chdir(WORK_DIR)
 
 # ## config Model
 
@@ -246,13 +228,84 @@ import torch
 
 root_dir = '/home/yu/OneDrive/Construal/data/Sharing/object detect results'
 
-outputs = {}
+detect_res = {}
 for i, pid in enumerate(os.listdir(root_dir)):
     res = torch.load(f'{root_dir}/{pid}/mrcnn_lvis.pt')
-    outputs[pid] = res
+    detect_res[pid] = res
     
-# outputs will be the collected results.
-# It's a dictionary, the key is the project_id, for example, type
-# outputs['843185506'], then the results for pid=843185506 will
-# show up.
 
+df_objdet = []
+for pid, v in detect_res.items():
+    for jpg, labels in v.items():
+        for label_id, label_counts in labels.items():
+            for inst_id, prob in enumerate(label_counts['prob']):
+                df_objdet.append((pid, jpg, label_id, inst_id, prob))
+df_objdet = dt.Frame(df_objdet, names=['pid', 'jpg', 'label_id', 'inst_id', 'prob'])
+sv('df_objdet')
+# -
+
+# # Label distribution
+
+# ## LVIS distribution
+
+# +
+LVIS_DATA_DIR = '/home/yu/Data/LVIS'
+
+import json
+
+with open(f'{LVIS_DATA_DIR}/lvis_v1_train.json') as ff:
+    lvis_dist = dt.Frame(json.load(ff)['categories'])
+
+lvis_dist.names = {'def': 'definition'}
+lvis_dist = lvis_dist[:, 
+      [f.id, f.name, f.definition, f.instance_count, f.image_count, f.frequency]]
+
+sv('lvis_dist')
+# -
+
+# ## kick distribution (R)
+
+ld(lvis_dist, force=T) # dist of LVIS
+ld(df_objdet) # object detection results
+
+# +
+kick = df_objdet[prob>=0.5, .(kick_freq=.N),
+      keyby=.(label_id)
+    ][, .(label_id, kick_freq=kick_freq/sum(kick_freq))]
+
+dist = lvis_dist[, .(label_id=id, lvis_freq=instance_count)
+    ][kick, on=.(label_id), nomatch=NULL
+    ][, ':='(lvis_freq=lvis_freq/sum(lvis_freq))
+    ][, ':='(is_kick_more=sign(kick_freq-lvis_freq))]
+
+# +
+# plot_ly(dist, x=~label_id, y=~lvis_freq, type='bar', name='LVIS') %>%
+#     add_trace(y=~kick_freq, name='Kickstart') %>%
+#     plotly::layout(barmode='group')
+
+kick_dist = df_objdet[prob>=0.5, .(inst_count=.N), keyby=.(pid, label_id)
+    ][dist, on=.(label_id), nomatch=NULL
+    ][, {
+      n_labels=uniqueN(label_id)
+      n_instances=sum(inst_count)
+    
+      kick_freq=sum(kick_freq*inst_count)
+      kick_freq_norm=kick_freq/n_instances
+    
+      lvis_freq=sum(lvis_freq*inst_count)
+      lvis_freq_norm=lvis_freq/n_instances
+    
+      abs_freq_diff=abs(sum(kick_freq*inst_count)-sum(lvis_freq*inst_count))
+      sign_freq_diff=sign(sum(is_kick_more*inst_count))
+      
+       
+      list(n_labels=n_labels, n_instances=n_instances, kick_freq=kick_freq,
+           kick_freq_norm=kick_freq_norm, lvis_freq=lvis_freq, 
+           lvis_freq_norm=lvis_freq_norm,
+           abs_freq_diff=abs_freq_diff, sign_freq_diff=sign_freq_diff)
+      },
+      keyby=.(pid)]
+# -
+
+sv(kick_dist)
+kick_dist
