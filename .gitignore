@@ -3,14 +3,11 @@
 *.rds
 *.feather
 *.csv
-settings.json
 
 # ignore dirs
-.ipynb_checkpoints
-.vscode
-/data
-/literature
-/models/Long-Tailed-Recognition.pytorch
-/models/pretrained_MonoDepth2
-/models/mmdetection
-
+/.vscode/
+/.ipynb_checkpoints/
+/data/
+/literature/
+/pretrained_models/
+/writing/
