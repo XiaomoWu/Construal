@@ -11,3 +11,7 @@
 /literature/
 /pretrained_models/
 /writing/
+/code/logs
+/code/step-by-step
+.vector_cache/
+lightning_logs/
