@@ -11,8 +11,13 @@
 /checkpoints/
 /data/
 /literature/
-/pretrained_models/
+/pretrained-models/
 /writing/
 /code/logs
 /code/step-by-step
 lightning_logs/
+
+
+# ignore files
+*DS_Store
+*.mp4
