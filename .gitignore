@@ -6,12 +6,13 @@
 
 # ignore dirs
 /.vscode/
+/.vector_cache/
 /.ipynb_checkpoints/
+/checkpoints/
 /data/
 /literature/
 /pretrained_models/
 /writing/
 /code/logs
 /code/step-by-step
-.vector_cache/
 lightning_logs/
