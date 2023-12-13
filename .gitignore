@@ -5,6 +5,7 @@
 *.csv
 
 # ignore dirs
+/.git.bfg-report/
 /.vscode/
 /.vector_cache/
 /.ipynb_checkpoints/
@@ -15,9 +16,11 @@
 /writing/
 /code/logs
 /code/step-by-step
+/code/v2/app/dev/data/V3Det/
 lightning_logs/
 
 
 # ignore files
 *DS_Store
 *.mp4
+bfg-1.14.0.jar
