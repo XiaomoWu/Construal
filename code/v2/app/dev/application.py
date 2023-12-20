@@ -6,15 +6,17 @@ from pathlib import Path
 from mmdet.apis import DetInferencer
 from PIL import Image
 from pyarrow.feather import read_feather
+from scipy.stats import percentileofscore
+
 
 # set working directory
 wdir = Path("/home/yu/OneDrive/Construal/code/v2/app/dev")
 os.chdir(wdir)
 
-# init global variables
-#     score_threshold (float): threshold for the confidence score of the object
+# init hyperparameters
+#     image_threshold (float): threshold for the object confidence in the user-uploaded image
 #     context (str): context of the image, either "kickstarter" or "general"
-score_threshold = 0.1
+image_threshold = 0.1
 context = "general"
 
 # Initialize the DetInferencer
@@ -29,29 +31,39 @@ inferencer = DetInferencer(
 )
 
 
+def get_metrics_dist_v3d():
+    """get the metrics distribution of V3D
+    Return
+        metrics_dist_v3d: a DataFrame with the following columns:
+            - pid (int): the project id
+            - mni (float): the mni of the project
+            - readability (float): the readability of the project
+            - uniqueness (float): the uniqueness of the project
+    """
+    metrics_dist_v3d = read_feather("data/metrics_dist_p50_allv3d.feather")
+    metrics_dist_v3d["uniqueness"] = metrics_dist_v3d["uniqueness"] * 1000
+
+    return metrics_dist_v3d
+
+
+metrics_dist_v3d = get_metrics_dist_v3d()
+
+
 def get_obj_freq(score_threshold):
     # load the object-level frequency table (Kick- and V3D-context)
-    freq_kick = read_feather(
-        f"data/freq_kick_p{int(score_threshold*100)}.feather",
-        columns=["label", "freq"],
-    )
     freq_v3d = read_feather(
         # for v3d, we only use one threahold (0.5)
         "data/freq_v3d_p50.feather",
         columns=["label", "freq"],
     )
-
-    # Rename the 'freq' column to 'freq_kick'
     freq_v3d = freq_v3d.rename(columns={"freq": "freq_v3d"})
-    freq_kick = freq_kick.rename(columns={"freq": "freq_kick"})
 
-    # combine the two frequency tables into one, `freq`
-    freq = pd.merge(freq_kick, freq_v3d, on="label", how="inner")
+    freq = freq_v3d
 
     return freq
 
 
-obj_freq = get_obj_freq(score_threshold)
+obj_freq = get_obj_freq(image_threshold)
 
 
 def get_obj_mni(score_threshold):
@@ -60,30 +72,12 @@ def get_obj_mni(score_threshold):
         obj_mni: a DataFrame that contains the mni of each object
 
     """
-    obj_mni_k10_kick = read_feather(
-        f"data/obj_mni_kick_k10_p{int(score_threshold*100)}.feather"
-    )
-    obj_mni_k25_kick = read_feather(
-        f"data/obj_mni_kick_k25_p{int(score_threshold*100)}.feather"
-    )
-    obj_mni_k50_kick = read_feather(
-        f"data/obj_mni_kick_k50_p{int(score_threshold*100)}.feather"
-    )
-    obj_mni_k100_kick = read_feather(
-        f"data/obj_mni_kick_k100_p{int(score_threshold*100)}.feather"
-    )
 
     # load MNI based on V3D (for V3D we only use one threshold, 0.5)
     obj_mni_k10_v3d = read_feather("data/obj_mni_v3d_k10_p50.feather")
     obj_mni_k25_v3d = read_feather("data/obj_mni_v3d_k25_p50.feather")
     obj_mni_k50_v3d = read_feather("data/obj_mni_v3d_k50_p50.feather")
     obj_mni_k100_v3d = read_feather("data/obj_mni_v3d_k100_p50.feather")
-
-    # rename columns in obj_mni_kick
-    obj_mni_k10_kick = obj_mni_k10_kick.rename(columns={"mni": "mni_k10_kick"})
-    obj_mni_k25_kick = obj_mni_k25_kick.rename(columns={"mni": "mni_k25_kick"})
-    obj_mni_k50_kick = obj_mni_k50_kick.rename(columns={"mni": "mni_k50_kick"})
-    obj_mni_k100_kick = obj_mni_k100_kick.rename(columns={"mni": "mni_k100_kick"})
 
     # rename columns in obj_mni_v3d
     obj_mni_k10_v3d = obj_mni_k10_v3d.rename(columns={"mni": "mni_k10_v3d"})
@@ -93,11 +87,7 @@ def get_obj_mni(score_threshold):
 
     # merge all MNI datasets
     obj_mni = (
-        obj_mni_k10_kick.merge(obj_mni_k25_kick, on="obj", how="inner")
-        .merge(obj_mni_k50_kick, on="obj", how="inner")
-        .merge(obj_mni_k100_kick, on="obj", how="inner")
-        .merge(obj_mni_k10_v3d, on="obj", how="inner")
-        .merge(obj_mni_k25_v3d, on="obj", how="inner")
+        obj_mni_k10_v3d.merge(obj_mni_k25_v3d, on="obj", how="inner")
         .merge(obj_mni_k50_v3d, on="obj", how="inner")
         .merge(obj_mni_k100_v3d, on="obj", how="inner")
     )
@@ -105,7 +95,7 @@ def get_obj_mni(score_threshold):
     return obj_mni
 
 
-obj_mni = get_obj_mni(score_threshold)
+obj_mni = get_obj_mni(image_threshold)
 
 
 def get_objects(img_path):
@@ -160,20 +150,23 @@ def get_uniqueness(obj_df, freq):
     Returns:
         a DataFrame with the following columns:
             - name (str): name of the image
-            - freq_kick (float): frequency of the object in the kickstarter context
             - freq_v3d (float): frequency of the object in the general context
     """
 
-    # we only keep objects with score >= score_threshold
-    obj_df = obj_df.loc[obj_df.score >= score_threshold]
+    # we only keep objects with score >= image_threshold
+    obj_df = obj_df.loc[obj_df.score >= image_threshold]
 
     # compute the freq of each project by aggregating the freq of each object in the project
     uniqueness = (
         obj_df.merge(freq, on="label", how="inner")
-        .groupby("name")
-        .agg({"freq_kick": "sum", "freq_v3d": "sum"})
+        .groupby(["name"])
+        .agg({"freq_v3d": "mean"})
+        .rename(columns={"freq_v3d": "uniqueness"})
         .reset_index()
     )
+
+    # multiply uniqueness by 1000
+    uniqueness["uniqueness"] = uniqueness["uniqueness"] * 1000
 
     return uniqueness
 
@@ -207,8 +200,8 @@ def get_readability(obj_df):
         return pd.Series(readability, index=["readability"])
 
     out = (
-        obj_df.loc[obj_df.score >= score_threshold]
-        .groupby("name")
+        obj_df.loc[obj_df.score >= image_threshold]
+        .groupby(["name"])
         .apply(_readability)
         .reset_index()
     )
@@ -231,24 +224,15 @@ def get_mni(obj_df, obj_mni):
     """
 
     # --- compute project-level MNI --- #
-    obj_df = obj_df.loc[obj_df.score >= score_threshold]
+    obj_df = obj_df.loc[obj_df.score >= image_threshold]
 
     # compute project-level MNI
     out = (
         obj_df.merge(obj_mni, left_on="label", right_on="obj", how="inner")
-        .groupby("name")
-        .agg(
-            {
-                "mni_k10_kick": "sum",
-                "mni_k25_kick": "sum",
-                "mni_k50_kick": "sum",
-                "mni_k100_kick": "sum",
-                "mni_k10_v3d": "sum",
-                "mni_k25_v3d": "sum",
-                "mni_k50_v3d": "sum",
-                "mni_k100_v3d": "sum",
-            }
-        )
+        .groupby(["name"])
+        .agg({"mni_k10_v3d": "sum"})
+        .rename(columns={"mni_k10_v3d": "mni"})
+        .reset_index()
     )
 
     return out
@@ -266,25 +250,54 @@ def get_metrics(uniqueness, readability, mni):
     """
 
     # combine all the metrics
-    metrics = uniqueness.merge(readability, on="name", how="inner").merge(
-        mni, on="name", how="inner"
+    metrics = (
+        uniqueness.merge(readability, on="name", how="inner")
+        .merge(mni, on="name", how="inner")
+        .round(2)  # round to 2 digits
     )
 
-    # only select the columns we need
-    if context == "kickstarter":
-        out = metrics.loc[
-            :, ["name", "freq_kick", "readability", "mni_k10_kick"]
-        ].rename(columns={"freq_kick": "uniqueness", "mni_k10_kick": "mni"})
+    # outputs: scores
+    scores = metrics.to_dict("records")[0]
 
-    elif context == "general":
-        out = metrics.loc[:, ["name", "freq_v3d", "readability", "mni_k10_v3d"]].rename(
-            columns={"freq_v3d": "uniqueness", "mni_k10_v3d": "mni"}
-        )
+    # outputs: percentile of scores
+    percentiles = {
+        "uniqueness_percentile": round(
+            percentileofscore(metrics_dist_v3d["uniqueness"], scores["uniqueness"]), 2
+        ),
+        "readability_percentile": round(
+            percentileofscore(metrics_dist_v3d["readability"], scores["readability"]), 2
+        ),
+        "mni_percentile": round(
+            percentileofscore(metrics_dist_v3d["mni"], scores["mni"]), 2
+        ),
+    }
 
-    # only keep first 2 digits
-    out = out.round(2)
+    # outputs: color of percentiles
+    uniqueness_color = "yellow"
+    if percentiles["uniqueness_percentile"] < 40:
+        uniqueness_color = "red"
+    if percentiles["uniqueness_percentile"] >= 70:
+        uniqueness_color = "green"
 
-    return out
+    readability_color = "yellow"
+    if percentiles["readability_percentile"] < 40:
+        readability_color = "red"
+    if percentiles["readability_percentile"] >= 70:
+        readability_color = "green"
+
+    mni_color = "yellow"
+    if percentiles["mni_percentile"] < 40:
+        mni_color = "red"
+    if percentiles["mni_percentile"] >= 70:
+        mni_color = "green"
+
+    colors = {
+        "uniqueness_color": uniqueness_color,
+        "readability_color": readability_color,
+        "mni_color": mni_color,
+    }
+
+    return scores, percentiles, colors
 
 
 application = app = Flask(__name__)
@@ -313,11 +326,13 @@ def upload():
         mni = get_mni(obj_df, obj_mni)
 
         # combine all metrics
-        scores = get_metrics(uniqueness, readability, mni).to_dict("records")[0]
+        scores, percentiles, colors = get_metrics(uniqueness, readability, mni)
 
         context = {
             "title": "Article Writing Style Evaluation",
             "score": scores,
+            "percent": percentiles,
+            "color": colors,
         }
         print(context)
 

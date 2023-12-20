@@ -81,18 +81,22 @@ Your writing is clearer than this percentage of published articles...
         <tr>
           <td></td>
           <td>Score</td>
+          <td>Percentile</td>
         </tr>
         <tr>
           <td>Concreteness</td>
           <td>{{context.score.mni}}</td>
+          <td bgcolor={{context.color.mni_color}}>{{context.percent.mni_percentile}}</td>
         </tr>
         <tr>
           <td>Uniqueness</td>
           <td>{{context.score.uniqueness}}</td>
+          <td bgcolor={{context.color.uniqueness_color}}>{{context.percent.uniqueness_percentile}}</td>
         </tr>
         <tr>
           <td>Readability</td>
           <td>{{context.score.readability}}</td>
+          <td bgcolor={{context.color.readability_color}}>{{context.percent.readability_percentile}}</td>
         </tr>
       </table>
 	<p></p>

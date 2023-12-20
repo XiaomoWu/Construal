@@ -25,18 +25,28 @@ inferencer = DetInferencer(
     model='/home/yu/OneDrive/Construal/pretrained-models/v3det/checkpoints/configs/v3det/deformable-detr-refine-twostage_swin_16xb2_sample1e-3_v3det_50e.py',
     weights='/home/yu/OneDrive/Construal/pretrained-models/v3det/checkpoints/Deformable_DETR_V3Det_SwinB.pth',
 
-    device='cuda:0'
+    device='cuda:1'
 )
 
 # image paths
 img_path = Path('/home/yu/OneDrive/Construal/pretrained-models/v3det/data/V3Det/images')
 img_paths = list(img_path.glob('**/*.jpg'))
 
-for i, img_path in tqdm(enumerate(img_paths)):
+for i, img_path in enumerate(tqdm(img_paths)):
+    # get image name and folder
+    img_name = img_path.stem
+    img_folder = img_path.parent.stem
+    
+    # skip if image not exist
+    if not img_path.exists():
+        print(f'{img_path} does not exist')
+        continue
+
     # inference
     # the model only keep the top 300 predictions (with the highest confidence)
-    out = inferencer(str(img_path), show=False)['predictions'][0]
+    with io.capture_output() as captured:
+        out = inferencer(str(img_path), show=False)['predictions'][0]
 
     # save results
-    torch.save(out, wdir/f'data/v3det/on-train/per-image-objects/{img_path.stem}.pt')
+    torch.save(out, wdir/f'data/v2/v3det/on-train/per-image-objects/{img_folder}-{img_name}.pt')
     
