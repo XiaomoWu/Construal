@@ -9,8 +9,8 @@ from pyarrow.feather import read_feather
 from scipy.stats import percentileofscore
 
 
-# set working directory
-wdir = Path("/home/yu/OneDrive/Construal/code/v2/app/dev")
+# # set working directory
+wdir = Path(os.getcwd())
 os.chdir(wdir)
 
 # init hyperparameters
@@ -74,23 +74,13 @@ def get_obj_mni(score_threshold):
     """
 
     # load MNI based on V3D (for V3D we only use one threshold, 0.5)
-    obj_mni_k10_v3d = read_feather("data/obj_mni_v3d_k10_p50.feather")
-    obj_mni_k25_v3d = read_feather("data/obj_mni_v3d_k25_p50.feather")
-    obj_mni_k50_v3d = read_feather("data/obj_mni_v3d_k50_p50.feather")
     obj_mni_k100_v3d = read_feather("data/obj_mni_v3d_k100_p50.feather")
 
     # rename columns in obj_mni_v3d
-    obj_mni_k10_v3d = obj_mni_k10_v3d.rename(columns={"mni": "mni_k10_v3d"})
-    obj_mni_k25_v3d = obj_mni_k25_v3d.rename(columns={"mni": "mni_k25_v3d"})
-    obj_mni_k50_v3d = obj_mni_k50_v3d.rename(columns={"mni": "mni_k50_v3d"})
     obj_mni_k100_v3d = obj_mni_k100_v3d.rename(columns={"mni": "mni_k100_v3d"})
 
     # merge all MNI datasets
-    obj_mni = (
-        obj_mni_k10_v3d.merge(obj_mni_k25_v3d, on="obj", how="inner")
-        .merge(obj_mni_k50_v3d, on="obj", how="inner")
-        .merge(obj_mni_k100_v3d, on="obj", how="inner")
-    )
+    obj_mni = obj_mni_k100_v3d
 
     return obj_mni
 
@@ -133,6 +123,10 @@ def get_objects(img_path):
             "size_ratio": obj_size_ratio,
         }
     )
+
+    # the output label starts from 0, but V3D label starts from 1
+    # so we add 1 to the label
+    df["label"] = df.label.astype(int) + int(1)
 
     return df
 
@@ -230,8 +224,8 @@ def get_mni(obj_df, obj_mni):
     out = (
         obj_df.merge(obj_mni, left_on="label", right_on="obj", how="inner")
         .groupby(["name"])
-        .agg({"mni_k10_v3d": "sum"})
-        .rename(columns={"mni_k10_v3d": "mni"})
+        .agg({"mni_k100_v3d": "mean"})
+        .rename(columns={"mni_k100_v3d": "mni"})
         .reset_index()
     )
 
@@ -273,24 +267,29 @@ def get_metrics(uniqueness, readability, mni):
     }
 
     # outputs: color of percentiles
-    uniqueness_color = "yellow"
+    uniqueness_color = "yellow"  # the larger the better
     if percentiles["uniqueness_percentile"] < 40:
         uniqueness_color = "red"
     if percentiles["uniqueness_percentile"] >= 70:
         uniqueness_color = "green"
 
-    readability_color = "yellow"
+    readability_color = "yellow"  # the smaller the better
     if percentiles["readability_percentile"] < 40:
-        readability_color = "red"
-    if percentiles["readability_percentile"] >= 70:
         readability_color = "green"
+    if percentiles["readability_percentile"] >= 70:
+        readability_color = "red"
 
-    mni_color = "yellow"
+    mni_color = "yellow"  # the larger the better
     if percentiles["mni_percentile"] < 40:
         mni_color = "red"
     if percentiles["mni_percentile"] >= 70:
         mni_color = "green"
 
+    # comment the following line if you want to multiply uniqueness by 1000
+    # (for better formatting in the output)
+    scores["uniqueness"] = scores["uniqueness"] / 1000
+
+    # final output
     colors = {
         "uniqueness_color": uniqueness_color,
         "readability_color": readability_color,
@@ -316,6 +315,9 @@ def upload():
         # identify objects
         obj_df = get_objects(img_path)
 
+        # remove the image
+        img_path.unlink()
+
         # calculate uniqueness
         uniqueness = get_uniqueness(obj_df, obj_freq)
 
@@ -329,12 +331,12 @@ def upload():
         scores, percentiles, colors = get_metrics(uniqueness, readability, mni)
 
         context = {
-            "title": "Article Writing Style Evaluation",
+            # "title": "Article Writing Style Evaluation",
             "score": scores,
             "percent": percentiles,
             "color": colors,
         }
-        print(context)
+        # print(context)
 
         return render_template("output.html", context=context)
 
@@ -342,4 +344,4 @@ def upload():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
